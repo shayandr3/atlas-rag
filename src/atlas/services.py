@@ -1,0 +1,53 @@
+"""Lazy service container so /healthz stays cheap and tests can inject fakes."""
+
+from dataclasses import dataclass
+
+from atlas.config import Settings
+from atlas.llm.adapter import LLM, AnthropicLLM
+from atlas.llm.pricing import PricingTable
+from atlas.retrieval.embedders import FastembedEmbedder
+from atlas.retrieval.hybrid import HybridRetriever
+from atlas.retrieval.qdrant_repo import QdrantRepo
+
+
+@dataclass
+class Services:
+    settings: Settings
+    pricing: PricingTable
+    embedder: FastembedEmbedder
+    repo: QdrantRepo
+    llm: LLM
+    retriever: HybridRetriever
+
+    @classmethod
+    def build(cls, settings: Settings) -> "Services":
+        problems = settings.validate_prod()
+        if problems:
+            raise RuntimeError(f"unsafe config: missing {', '.join(problems)}")
+        if not settings.anthropic_api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY is not set; copy .env.example to .env and fill it in"
+            )
+        if not settings.qdrant_url:
+            raise RuntimeError("QDRANT_URL is not set; copy .env.example to .env and fill it in")
+        pricing = PricingTable.load()
+        embedder = FastembedEmbedder(settings.embed_model, settings.sparse_model)
+        repo = QdrantRepo(
+            url=settings.qdrant_url,
+            api_key=settings.qdrant_api_key,
+            collection=settings.qdrant_collection,
+            timeout_seconds=settings.qdrant_timeout_seconds,
+        )
+        llm = AnthropicLLM(
+            api_key=settings.anthropic_api_key,
+            pricing=pricing,
+            timeout_seconds=settings.llm_timeout_seconds,
+        )
+        return cls(
+            settings=settings,
+            pricing=pricing,
+            embedder=embedder,
+            repo=repo,
+            llm=llm,
+            retriever=HybridRetriever(embedder, repo),
+        )
