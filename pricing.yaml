@@ -1,0 +1,21 @@
+# Token prices used by the cost accountant (USD per 1,000,000 tokens).
+# HUMAN: fill from your provider's current pricing page and set `updated`.
+# Claude Code must never guess prices; a missing price must make cost accounting fail loudly.
+
+updated: null
+
+models:
+  # Rename these keys to the exact model ids you set in .env
+  # (LLM_CHEAP_MODEL / LLM_STRONG_MODEL / LLM_FALLBACK_MODEL) and price each.
+  LLM_CHEAP_MODEL:
+    input_per_1m_usd: null
+    cached_input_per_1m_usd: null
+    output_per_1m_usd: null
+  LLM_STRONG_MODEL:
+    input_per_1m_usd: null
+    cached_input_per_1m_usd: null
+    output_per_1m_usd: null
+  LLM_FALLBACK_MODEL:
+    input_per_1m_usd: null
+    cached_input_per_1m_usd: null
+    output_per_1m_usd: null
