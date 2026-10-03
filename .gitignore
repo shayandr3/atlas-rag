@@ -15,6 +15,7 @@ dist/
 build/
 
 # Tooling caches
+.gitleaks-report.json
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
