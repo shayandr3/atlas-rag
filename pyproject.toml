@@ -9,10 +9,12 @@ dependencies = [
     "fastapi>=0.115",
     "fastembed>=0.4",
     "langgraph>=0.2",
+    "numpy>=1.26",
     "orjson>=3.10",
     "prometheus-client>=0.21",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    "pyyaml>=6.0.1",
     "qdrant-client>=1.10",
     "redis>=5.0",
     "structlog>=24.1",
@@ -21,6 +23,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ingest = [
+    "arxiv>=2.1",
+    "pymupdf>=1.24",
+    "tqdm>=4.66",
+]
 dev = [
     "fakeredis>=2.24",
     "hypothesis>=6.100",
@@ -50,6 +57,8 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "C4", "SIM", "UP", "RUF", "ASYNC"]
+# the context-prefix format uses the spec's › separator (title › section_path)
+allowed-confusables = ["›"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["atlas"]
@@ -67,12 +76,14 @@ module = [
     "fakeredis.*",
     "fastembed.*",
     "langgraph.*",
+    "numpy.*",
     "orjson.*",
     "prometheus_client.*",
     "qdrant_client.*",
     "redis.*",
     "respx.*",
     "structlog.*",
+    "yaml.*",
 ]
 ignore_missing_imports = true
 
