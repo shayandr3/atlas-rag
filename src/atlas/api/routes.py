@@ -86,6 +86,8 @@ async def ask(payload: AskRequest, request: Request) -> AskResponse:
             llm=services.llm,
             settings=services.settings,
             cache=services.cache,
+            reranker=services.reranker,
+            graph=services.graph,
         )
     except PricingError as exc:
         logger.error("pricing misconfigured: %s", exc)

@@ -35,10 +35,20 @@ class Settings(BaseSettings):
     embed_model: str = "BAAI/bge-small-en-v1.5"
     sparse_model: str = "Qdrant/bm25"
 
-    # Pipeline limits (M1)
+    # Rerank (M3)
+    rerank_backend: str = "local_onnx"  # local_onnx | cohere | none
+    rerank_model: str = "jinaai/jina-reranker-v1-tiny-en"
+    rerank_top_in: int = 20
+    rerank_top_out: int = 6
+
+    # Pipeline limits (M1/M3)
     max_context_tokens: int = 6000
     max_output_tokens: int = 700
     retrieval_top_k: int = 8
+    max_corrective_loops: int = 2
+    max_hops: int = 3
+    grade_skip_threshold: float = 0.95
+    faithfulness_sample_rate: float = 0.0  # .env sets 0.2 in dev/prod
 
     # Timeouts (M1)
     llm_timeout_seconds: float = 60.0

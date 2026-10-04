@@ -26,11 +26,14 @@ def config_fingerprint(settings: Settings) -> str:
         "strong": settings.llm_strong_model,
         "embed": settings.embed_model,
         "sparse": settings.sparse_model,
+        "rerank": (settings.rerank_backend, settings.rerank_model, settings.rerank_top_out),
         "top_k": settings.retrieval_top_k,
         "max_context": settings.max_context_tokens,
         "max_output": settings.max_output_tokens,
+        "corrective": settings.max_corrective_loops,
+        "hops": settings.max_hops,
         "prompt": _sha(ANSWER_SYSTEM)[:16],
-        "v": 1,
+        "v": 2,
     }
     return _sha(json.dumps(payload, sort_keys=True))[:16]
 

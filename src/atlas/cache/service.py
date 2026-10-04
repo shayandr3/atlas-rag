@@ -197,6 +197,24 @@ class CacheService:
             int(self._settings.cache_retrieval_ttl_hours * 3600),
         )
 
+    # ---- router cache (M3) ---------------------------------------------------------
+
+    async def get_route(self, query: str) -> dict[str, Any] | None:
+        cached = await self._redis.get(self._keys.route(query))
+        if cached is None:
+            CACHE_REQUESTS.labels(layer="route", result="miss").inc()
+            return None
+        CACHE_REQUESTS.labels(layer="route", result="hit").inc()
+        payload: dict[str, Any] = loads(cached)
+        return payload
+
+    async def put_route(self, query: str, payload: dict[str, Any]) -> None:
+        await self._redis.set(
+            self._keys.route(query),
+            dumps(payload),
+            int(self._settings.cache_exact_ttl_hours * 3600),
+        )
+
     # ---- single-flight (spec §9) -----------------------------------------------------
 
     async def acquire(self, query: str) -> bool:
