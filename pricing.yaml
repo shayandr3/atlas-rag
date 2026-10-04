@@ -1,21 +1,19 @@
 # Token prices used by the cost accountant (USD per 1,000,000 tokens).
-# HUMAN: fill from your provider's current pricing page and set `updated`.
-# Claude Code must never guess prices; a missing price must make cost accounting fail loudly.
+#
+# Source: https://api-docs.deepseek.com/quick_start/pricing (fetched 2026-10-04).
+# PEAK rates are configured — off-peak is half of peak, so this never undercounts spend.
+# Peak hours: 01:00-04:00 and 06:00-10:00 UTC, Mon-Fri.
+# Keys MUST match the model ids in .env (LLM_CHEAP_MODEL / LLM_STRONG_MODEL).
+# A missing price makes cost accounting fail loudly (spec §0.3) — never guess a number.
 
-updated: null
+updated: 2026-10-04
 
 models:
-  # Rename these keys to the exact model ids you set in .env
-  # (LLM_CHEAP_MODEL / LLM_STRONG_MODEL / LLM_FALLBACK_MODEL) and price each.
-  LLM_CHEAP_MODEL:
-    input_per_1m_usd: null
-    cached_input_per_1m_usd: null
-    output_per_1m_usd: null
-  LLM_STRONG_MODEL:
-    input_per_1m_usd: null
-    cached_input_per_1m_usd: null
-    output_per_1m_usd: null
-  LLM_FALLBACK_MODEL:
-    input_per_1m_usd: null
-    cached_input_per_1m_usd: null
-    output_per_1m_usd: null
+  deepseek-flash:
+    input_per_1m_usd: 0.30        # peak cache-miss input
+    cached_input_per_1m_usd: 0.006 # peak cache-hit input
+    output_per_1m_usd: 1.20       # peak output
+  deepseek-v4-pro:
+    input_per_1m_usd: 1.32
+    cached_input_per_1m_usd: 0.044
+    output_per_1m_usd: 3.96
