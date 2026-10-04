@@ -1,18 +1,21 @@
 """M1 ask pipeline: hybrid retrieve → pack → generate with citations (spec §8.5-§8.7).
 
-Router, reranking, corrective grading and multi-hop arrive in M3; this module keeps the
-node functions plain so the later graph wiring only orchestrates them.
+M2 adds the cache lifecycle (spec §9): L1 exact → L2 semantic → single-flight →
+L3 retrieval → generate → store. The domain↔cache payload mapping lives here so
+the cache layer itself stays domain-free.
 """
 
 import re
 import uuid
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import asdict, dataclass
+from typing import Any, Protocol
 
+from atlas.cache.service import CacheService
 from atlas.config import Settings
 from atlas.llm.adapter import LLMResponse
 from atlas.llm.prompts import ANSWER_SYSTEM, CANARY_TOKEN
 from atlas.retrieval.chunks import Chunk
+from atlas.retrieval.embedders import QueryEmbedding
 
 _CITATION_RE = re.compile(r"\[S(\d+)\]")
 _CHARS_PER_TOKEN = 4
@@ -44,10 +47,13 @@ class AskResult:
     abstained: bool
     usage: Usage
     request_id: str
+    cache_status: str = "miss"
 
 
 class Retriever(Protocol):
-    async def search(self, query: str, *, limit: int) -> list[Chunk]: ...
+    async def search(
+        self, query: str, *, limit: int, embedding: QueryEmbedding | None = None
+    ) -> list[Chunk]: ...
 
 
 class LLM(Protocol):
@@ -98,24 +104,78 @@ def build_citations(answer: str, chunks: list[Chunk]) -> list[Citation]:
     return citations
 
 
+def result_payload(result: AskResult) -> dict[str, Any]:
+    return {
+        "answer": result.answer,
+        "citations": [asdict(c) for c in result.citations],
+        "route": result.route,
+        "abstained": result.abstained,
+        "usage": asdict(result.usage),
+    }
+
+
+def result_from_payload(payload: dict[str, Any], rid: str, cache_status: str) -> AskResult:
+    usage_raw = payload.get("usage") or {}
+    return AskResult(
+        answer=str(payload.get("answer", "")),
+        citations=[Citation(**c) for c in payload.get("citations", [])],
+        route=str(payload.get("route", "simple")),
+        abstained=bool(payload.get("abstained", False)),
+        usage=Usage(
+            input_tokens=int(usage_raw.get("input_tokens", 0)),
+            output_tokens=int(usage_raw.get("output_tokens", 0)),
+            cached_tokens=int(usage_raw.get("cached_tokens", 0)),
+            cost_usd=float(usage_raw.get("cost_usd", 0.0)),
+        ),
+        request_id=rid,
+        cache_status=cache_status,
+    )
+
+
 async def run_ask(
     query: str,
     *,
     retriever: Retriever,
     llm: LLM,
     settings: Settings,
+    cache: CacheService | None = None,
     request_id: str | None = None,
 ) -> AskResult:
     rid = request_id or uuid.uuid4().hex
-    chunks = await retriever.search(query, limit=settings.retrieval_top_k)
+    emb: QueryEmbedding | None = None
+
+    if cache is not None:
+        payload = await cache.get_response(query)
+        if payload is not None:
+            return result_from_payload(payload, rid, cache_status="hit")
+        emb = await cache.embed_query(query)
+        payload = await cache.get_semantic(query, emb)
+        if payload is not None:
+            return result_from_payload(payload, rid, cache_status="semantic")
+        if not await cache.acquire(query):
+            payload = await cache.wait_for_response(query)
+            if payload is not None:
+                return result_from_payload(payload, rid, cache_status="hit")
+
+    chunks = await _retrieve(query, retriever, settings, cache, emb)
+
+    async def finish(result: AskResult) -> AskResult:
+        if cache is not None:
+            payload = result_payload(result)
+            await cache.put_response(query, payload)
+            await cache.put_semantic(query, emb, payload)
+        return result
+
     if not chunks:
-        return AskResult(
-            answer="I couldn't find any relevant evidence in the corpus for this question.",
-            citations=[],
-            route="simple",
-            abstained=True,
-            usage=Usage(input_tokens=0, output_tokens=0, cached_tokens=0, cost_usd=0.0),
-            request_id=rid,
+        return await finish(
+            AskResult(
+                answer="I couldn't find any relevant evidence in the corpus for this question.",
+                citations=[],
+                route="simple",
+                abstained=True,
+                usage=Usage(input_tokens=0, output_tokens=0, cached_tokens=0, cost_usd=0.0),
+                request_id=rid,
+            )
         )
 
     context = pack_context(chunks, settings.max_context_tokens)
@@ -135,20 +195,41 @@ async def run_ask(
 
     answer = response.text
     if CANARY_TOKEN in answer:
-        return AskResult(
-            answer="The answer was withheld because it failed the leak check.",
-            citations=[],
+        return await finish(
+            AskResult(
+                answer="The answer was withheld because it failed the leak check.",
+                citations=[],
+                route="simple",
+                abstained=True,
+                usage=usage,
+                request_id=rid,
+            )
+        )
+
+    return await finish(
+        AskResult(
+            answer=answer,
+            citations=build_citations(answer, chunks),
             route="simple",
-            abstained=True,
+            abstained=False,
             usage=usage,
             request_id=rid,
         )
-
-    return AskResult(
-        answer=answer,
-        citations=build_citations(answer, chunks),
-        route="simple",
-        abstained=False,
-        usage=usage,
-        request_id=rid,
     )
+
+
+async def _retrieve(
+    query: str,
+    retriever: Retriever,
+    settings: Settings,
+    cache: CacheService | None,
+    emb: QueryEmbedding | None,
+) -> list[Chunk]:
+    if cache is not None:
+        cached = await cache.get_chunks(query, settings.retrieval_top_k)
+        if cached is not None:
+            return [Chunk(**c) for c in cached]
+    chunks = await retriever.search(query, limit=settings.retrieval_top_k, embedding=emb)
+    if cache is not None:
+        await cache.put_chunks(query, settings.retrieval_top_k, [asdict(c) for c in chunks])
+    return chunks

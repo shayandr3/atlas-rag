@@ -44,6 +44,7 @@ class AskResponse(BaseModel):
     abstained: bool
     usage: UsageOut
     request_id: str
+    cache: str = "miss"
     trace: None = None
 
 
@@ -71,6 +72,7 @@ def _to_response(result: AskResult) -> AskResponse:
             cost_usd=result.usage.cost_usd,
         ),
         request_id=result.request_id,
+        cache=result.cache_status,
     )
 
 
@@ -83,6 +85,7 @@ async def ask(payload: AskRequest, request: Request) -> AskResponse:
             retriever=services.retriever,
             llm=services.llm,
             settings=services.settings,
+            cache=services.cache,
         )
     except PricingError as exc:
         logger.error("pricing misconfigured: %s", exc)

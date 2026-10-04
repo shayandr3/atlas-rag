@@ -1,7 +1,10 @@
 """Shared test fakes: no network, no keys, no models."""
 
+import asyncio
+
 from atlas.llm.adapter import LLMResponse
 from atlas.retrieval.chunks import Chunk
+from atlas.retrieval.embedders import QueryEmbedding
 
 
 def make_chunks() -> list[Chunk]:
@@ -32,15 +35,18 @@ class FakeRetriever:
         self.chunks = chunks
         self.calls = 0
 
-    async def search(self, query: str, *, limit: int) -> list[Chunk]:
+    async def search(
+        self, query: str, *, limit: int, embedding: QueryEmbedding | None = None
+    ) -> list[Chunk]:
         self.calls += 1
         return self.chunks[:limit]
 
 
 class FakeLLM:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, delay_s: float = 0.0) -> None:
         self.text = text
         self.calls = 0
+        self.delay_s = delay_s
         self.last_user = ""
 
     async def complete(
@@ -53,6 +59,8 @@ class FakeLLM:
     ) -> LLMResponse:
         self.calls += 1
         self.last_user = user
+        if self.delay_s:
+            await asyncio.sleep(self.delay_s)
         return LLMResponse(
             text=self.text,
             model=model,
@@ -61,3 +69,16 @@ class FakeLLM:
             cached_tokens=0,
             cost_usd=0.001,
         )
+
+
+class FakeEmbedder:
+    """Constant vector by default (semantic cache always hits); optional per-text vectors."""
+
+    def __init__(self, vectors: dict[str, list[float]] | None = None) -> None:
+        self.calls = 0
+        self._vectors = vectors or {}
+
+    async def embed_query(self, text: str) -> QueryEmbedding:
+        self.calls += 1
+        dense = self._vectors.get(text, [1.0, 0.0, 0.0, 0.0])
+        return QueryEmbedding(dense=dense, sparse_indices=[0], sparse_values=[1.0])

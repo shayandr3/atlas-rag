@@ -1,7 +1,7 @@
 """Hybrid retrieval source: embed the query, search Qdrant, normalize to Chunks."""
 
 from atlas.retrieval.chunks import Chunk
-from atlas.retrieval.embedders import Embedder
+from atlas.retrieval.embedders import Embedder, QueryEmbedding
 from atlas.retrieval.qdrant_repo import QdrantRepo
 
 
@@ -11,8 +11,11 @@ class HybridRetriever:
         self._repo = repo
         self._mode = mode
 
-    async def search(self, query: str, *, limit: int) -> list[Chunk]:
-        embedding = await self._embedder.embed_query(query)
+    async def search(
+        self, query: str, *, limit: int, embedding: QueryEmbedding | None = None
+    ) -> list[Chunk]:
+        if embedding is None:
+            embedding = await self._embedder.embed_query(query)
         points = await self._repo.search(
             dense=embedding.dense,
             sparse_indices=embedding.sparse_indices,

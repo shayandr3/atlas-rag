@@ -44,6 +44,17 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 60.0
     qdrant_timeout_seconds: float = 10.0
 
+    # Cache / Redis (M2, spec §9)
+    redis_url: str = "redis://localhost:6379/0"
+    semantic_cache_enabled: bool = True
+    semantic_cache_threshold: float = 0.95
+    semantic_cache_max_entries: int = 2000
+    cache_exact_ttl_hours: int = 24
+    cache_retrieval_ttl_hours: int = 6
+    cache_embed_ttl_days: int = 7
+    cache_abstention_ttl_minutes: int = 15
+    cache_socket_timeout: float = 2.0
+
     def validate_prod(self) -> list[str]:
         """Config problems that make a prod boot unsafe; empty list when clean (spec §2.3)."""
         if self.app_env != "prod":

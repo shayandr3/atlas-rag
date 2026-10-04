@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from atlas.cache.client import FailOpenRedis
+from atlas.cache.service import CacheService
 from atlas.config import Settings
 from atlas.llm.adapter import LLM, build_llm
 from atlas.llm.pricing import PricingTable
@@ -18,6 +20,7 @@ class Services:
     repo: QdrantRepo
     llm: LLM
     retriever: HybridRetriever
+    cache: CacheService | None = None
 
     @classmethod
     def build(cls, settings: Settings) -> "Services":
@@ -35,6 +38,13 @@ class Services:
             timeout_seconds=settings.qdrant_timeout_seconds,
         )
         llm = build_llm(settings, pricing)
+        cache: CacheService | None = None
+        if settings.redis_url:
+            cache = CacheService(
+                settings,
+                FailOpenRedis(settings.redis_url, socket_timeout=settings.cache_socket_timeout),
+                embedder=embedder,
+            )
         return cls(
             settings=settings,
             pricing=pricing,
@@ -42,4 +52,5 @@ class Services:
             repo=repo,
             llm=llm,
             retriever=HybridRetriever(embedder, repo),
+            cache=cache,
         )
