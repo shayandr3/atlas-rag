@@ -43,11 +43,17 @@ class FakeRetriever:
 
 
 class FakeLLM:
-    def __init__(self, text: str, delay_s: float = 0.0) -> None:
+    def __init__(
+        self,
+        text: str = "",
+        delay_s: float = 0.0,
+        responses: list[str] | None = None,
+    ) -> None:
         self.text = text
         self.calls = 0
         self.delay_s = delay_s
         self.last_user = ""
+        self._responses = list(responses) if responses else None
 
     async def complete(
         self,
@@ -61,14 +67,27 @@ class FakeLLM:
         self.last_user = user
         if self.delay_s:
             await asyncio.sleep(self.delay_s)
+        body = self._responses.pop(0) if self._responses else self.text
         return LLMResponse(
-            text=self.text,
+            text=body,
             model=model,
             input_tokens=100,
             output_tokens=20,
             cached_tokens=0,
             cost_usd=0.001,
         )
+
+
+class FakeReranker:
+    def __init__(self, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls = 0
+
+    async def rerank(self, query: str, chunks: list[Chunk]) -> list[Chunk]:
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("reranker exploded")
+        return list(reversed(chunks))
 
 
 class FakeEmbedder:
