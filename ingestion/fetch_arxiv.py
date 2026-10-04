@@ -7,6 +7,7 @@ from typing import Any
 
 import arxiv
 import fitz
+import httpx
 
 
 def parse_args() -> argparse.Namespace:
@@ -21,6 +22,15 @@ def parse_args() -> argparse.Namespace:
 def pdf_to_text(pdf_path: str | Path) -> str:
     with fitz.open(pdf_path) as doc:
         return "\n".join(page.get_text() for page in doc)
+
+
+def download_pdf(paper: arxiv.Result, dest: Path) -> None:
+    """arxiv>=4 dropped Result.download_pdf; fetch the PDF directly (redirects to the CDN)."""
+    url = getattr(paper, "pdf_url", None) or f"https://arxiv.org/pdf/{paper.get_short_id()}"
+    with httpx.Client(timeout=60, follow_redirects=True) as client:
+        resp = client.get(url)
+        resp.raise_for_status()
+        dest.write_bytes(resp.content)
 
 
 def main() -> None:
@@ -40,8 +50,10 @@ def main() -> None:
     skipped = 0
     with out.open("w", encoding="utf-8") as fh:
         for paper in client.results(search):
+            pdf_path = pdf_dir / f"{paper.get_short_id().replace('/', '_')}.pdf"
             try:
-                pdf_path = paper.download_pdf(dirpath=str(pdf_dir))
+                if not pdf_path.exists():
+                    download_pdf(paper, pdf_path)
                 text = pdf_to_text(pdf_path)
             except Exception as exc:
                 print(f"skip {paper.get_short_id()}: {exc}")

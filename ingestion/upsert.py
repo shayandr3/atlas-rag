@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from qdrant_client import models
+from qdrant_client.http.exceptions import ResponseHandlingException
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
 from atlas.config import get_settings
 from atlas.retrieval.embedders import FastembedEmbedder
@@ -17,6 +19,17 @@ from atlas.retrieval.qdrant_repo import QdrantRepo
 def point_id(chunk_id: str) -> str:
     """Deterministic UUID so re-ingestion upserts idempotently (Qdrant ids must be UUID/int)."""
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"atlas-rag:{chunk_id}"))
+
+
+@retry(
+    retry=retry_if_exception_type((ResponseHandlingException,)),
+    wait=wait_fixed(5),
+    stop=stop_after_attempt(4),
+    reraise=True,
+)
+async def _upsert_batch(repo: QdrantRepo, points: list[models.PointStruct]) -> None:
+    """Free-cluster writes can exceed short timeouts; batches are idempotent, so retry."""
+    await repo.upsert(points)
 
 
 async def run(args: argparse.Namespace, records: list[dict[str, Any]]) -> None:
@@ -59,7 +72,7 @@ async def run(args: argparse.Namespace, records: list[dict[str, Any]]) -> None:
             )
             for r, emb in zip(batch, embeddings, strict=True)
         ]
-        await repo.upsert(points)
+        await _upsert_batch(repo, points)
         done += len(points)
         print(f"upserted {done}/{len(records)}")
     print(f"done: collection {collection!r} now has {await repo.count()} points")
