@@ -9,6 +9,16 @@
 updated: 2026-10-04
 
 models:
+  # Z.AI free tier (current active provider, ADR 0003): the model is free, so true
+  # unit cost is 0. The real budget is the free tier's rate limits, tracked by the
+  # rate limiter, not by USD.
+  glm-4.7-flash:
+    input_per_1m_usd: 0.0
+    cached_input_per_1m_usd: 0.0
+    output_per_1m_usd: 0.0
+  # Paid fallback (kept for when the operator funds a key again); source:
+  # https://api-docs.deepseek.com/quick_start/pricing (fetched 2026-10-04).
+  # Peak rates: off-peak is half of peak. Peak hours 01:00-04:00, 06:00-10:00 UTC Mon-Fri.
   deepseek-flash:
     input_per_1m_usd: 0.30        # peak cache-miss input
     cached_input_per_1m_usd: 0.006 # peak cache-hit input
