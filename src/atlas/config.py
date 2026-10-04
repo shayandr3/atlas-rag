@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     # LLM (M1)
     llm_provider: Literal["anthropic", "openai"] = "anthropic"
     anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    openai_base_url: str = ""
     llm_cheap_model: str = ""
     llm_strong_model: str = ""
     llm_fallback_model: str = ""
@@ -46,6 +48,8 @@ class Settings(BaseSettings):
         missing: list[str] = []
         if self.llm_provider == "anthropic" and not self.anthropic_api_key:
             missing.append("ANTHROPIC_API_KEY")
+        if self.llm_provider == "openai" and not self.openai_api_key:
+            missing.append("OPENAI_API_KEY")
         if not self.llm_cheap_model:
             missing.append("LLM_CHEAP_MODEL")
         if not self.llm_strong_model:

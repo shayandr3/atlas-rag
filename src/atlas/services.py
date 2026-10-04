@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from atlas.config import Settings
-from atlas.llm.adapter import LLM, AnthropicLLM
+from atlas.llm.adapter import LLM, build_llm
 from atlas.llm.pricing import PricingTable
 from atlas.retrieval.embedders import FastembedEmbedder
 from atlas.retrieval.hybrid import HybridRetriever
@@ -24,10 +24,6 @@ class Services:
         problems = settings.validate_prod()
         if problems:
             raise RuntimeError(f"unsafe config: missing {', '.join(problems)}")
-        if not settings.anthropic_api_key:
-            raise RuntimeError(
-                "ANTHROPIC_API_KEY is not set; copy .env.example to .env and fill it in"
-            )
         if not settings.qdrant_url:
             raise RuntimeError("QDRANT_URL is not set; copy .env.example to .env and fill it in")
         pricing = PricingTable.load()
@@ -38,11 +34,7 @@ class Services:
             collection=settings.qdrant_collection,
             timeout_seconds=settings.qdrant_timeout_seconds,
         )
-        llm = AnthropicLLM(
-            api_key=settings.anthropic_api_key,
-            pricing=pricing,
-            timeout_seconds=settings.llm_timeout_seconds,
-        )
+        llm = build_llm(settings, pricing)
         return cls(
             settings=settings,
             pricing=pricing,
