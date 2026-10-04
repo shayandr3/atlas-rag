@@ -8,6 +8,7 @@ from atlas.cache.service import CacheService
 from atlas.config import Settings
 from atlas.llm.adapter import LLM, build_llm
 from atlas.llm.pricing import PricingTable
+from atlas.resilience.breaker import Breakers
 from atlas.retrieval.embedders import FastembedEmbedder
 from atlas.retrieval.hybrid import HybridRetriever
 from atlas.retrieval.qdrant_repo import QdrantRepo
@@ -26,6 +27,7 @@ class Services:
     cache: CacheService | None = None
     reranker: Any = None
     graph: Any = None
+    breakers: Breakers = field(default_factory=Breakers.build)
     rate_limiter: RateLimiter = field(default_factory=RateLimiter)
 
     @classmethod
@@ -56,6 +58,7 @@ class Services:
                 embedder=embedder,
             )
         graph: Any = None
+        breakers = Breakers.build()
         try:
             from atlas.pipeline.graph import build_graph_runner
 
@@ -65,6 +68,7 @@ class Services:
                 settings=settings,
                 cache=cache,
                 reranker=reranker,
+                breakers=breakers,
             )
         except Exception:
             # LangGraph unavailable or wiring failed: the sequential runner covers it
@@ -79,5 +83,6 @@ class Services:
             cache=cache,
             reranker=reranker,
             graph=graph,
+            breakers=breakers,
             rate_limiter=RateLimiter(cache._redis if cache else None),
         )

@@ -4,7 +4,7 @@ import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from prometheus_client import REGISTRY, generate_latest
 from pydantic import BaseModel, Field
@@ -13,6 +13,15 @@ from atlas.config import get_settings
 from atlas.llm.pricing import PricingError
 from atlas.observability.metrics import BUDGET_REMAINING, LLM_COST, RATE_LIMITED
 from atlas.pipeline.ask import AskResult, Usage, run_ask
+from atlas.resilience.errors import (
+    AtlasError,
+    BudgetExceeded,
+    GuardBlocked,
+    Internal,
+    RateLimited,
+    Unauthorized,
+    UpstreamUnavailable,
+)
 from atlas.security.auth import Principal, check_token, resolve_principal
 from atlas.security.budget import BudgetLedger
 from atlas.security.guards import input_guard
@@ -67,7 +76,7 @@ def _get_services(request: Request) -> Services:
 def _principal(request: Request, creds: HTTPAuthorizationCredentials | None) -> Principal:
     principal = resolve_principal(creds.credentials if creds else None, get_settings())
     if principal is None:
-        raise HTTPException(status_code=401, detail="invalid or missing API key")
+        raise Unauthorized("invalid or missing API key")
     return principal
 
 
@@ -106,29 +115,17 @@ async def ask(
     allowed, retry_after = await limiter.allow(scope_key, principal.rpm)
     if not allowed:
         RATE_LIMITED.labels(scope="key" if not principal.anonymous else "ip").inc()
-        raise HTTPException(
-            status_code=429,
-            detail="rate limit exceeded",
-            headers={"Retry-After": str(retry_after)},
-        )
+        raise RateLimited(retry_after=retry_after)
 
     ledger = BudgetLedger(settings, services.cache._redis if services.cache else None)
     budget_ok, reason = await ledger.check(principal.id, principal.daily_budget_usd)
     if not budget_ok:
-        raise HTTPException(status_code=429, detail=reason)
+        raise BudgetExceeded(reason)
 
     verdict = await input_guard(payload.query, services.llm, settings)
     if verdict.blocked:
         logger.info("input blocked rules=%s query_len=%d", verdict.rules, len(payload.query))
-        result = AskResult(
-            answer="This request was blocked by the input guard.",
-            citations=[],
-            route="unsafe",
-            abstained=True,
-            usage=_zero_usage(),
-            request_id="guard-blocked",
-        )
-        return _to_response(result)
+        raise GuardBlocked("input blocked by the guard")
 
     try:
         result = await run_ask(
@@ -139,15 +136,16 @@ async def ask(
             cache=services.cache,
             reranker=services.reranker,
             graph=services.graph,
+            breakers=services.breakers,
         )
+    except AtlasError:
+        raise
     except PricingError as exc:
         logger.error("pricing misconfigured: %s", exc)
-        raise HTTPException(status_code=500, detail=f"cost accounting failed: {exc}") from exc
+        raise Internal("cost accounting failed") from exc
     except Exception:
         logger.exception("ask pipeline failed")
-        raise HTTPException(
-            status_code=503, detail="upstream unavailable; try again shortly"
-        ) from None
+        raise UpstreamUnavailable("upstream unavailable; try again shortly") from None
 
     if result.usage.cost_usd > 0:
         LLM_COST.labels(model=settings.llm_strong_model).inc(result.usage.cost_usd)
@@ -199,7 +197,7 @@ async def metrics(
     token = creds.credentials if creds else None
     dev_open = settings.app_env == "dev" and not settings.metrics_bearer_token
     if not dev_open and not check_token(token, settings.metrics_bearer_token):
-        raise HTTPException(status_code=401, detail="metrics token required")
+        raise Unauthorized("metrics token required")
     return Response(content=generate_latest(REGISTRY), media_type="text/plain; version=0.0.4")
 
 
@@ -210,7 +208,7 @@ async def cache_flush(
 ) -> dict[str, Any]:
     settings = get_settings()
     if not check_token(creds.credentials if creds else None, settings.admin_token):
-        raise HTTPException(status_code=401, detail="admin token required")
+        raise Unauthorized("admin token required")
     services = _get_services(request)
     if services.cache is None:
         return {"flushed": 0}
@@ -234,7 +232,7 @@ async def admin_stats(
 ) -> dict[str, Any]:
     settings = get_settings()
     if not check_token(creds.credentials if creds else None, settings.admin_token):
-        raise HTTPException(status_code=401, detail="admin token required")
+        raise Unauthorized("admin token required")
     services = _get_services(request)
     ledger = BudgetLedger(settings, services.cache._redis if services.cache else None)
     daily = await ledger.spent(f"budget:global:daily:{time.strftime('%Y%m%d')}")
@@ -256,7 +254,7 @@ async def budget_reset(
 ) -> dict[str, Any]:
     settings = get_settings()
     if not check_token(creds.credentials if creds else None, settings.admin_token):
-        raise HTTPException(status_code=401, detail="admin token required")
+        raise Unauthorized("admin token required")
     services = _get_services(request)
     ledger = BudgetLedger(settings, services.cache._redis if services.cache else None)
     return {"cleared": await ledger.reset_all()}

@@ -51,6 +51,7 @@ class GraphDeps:
     settings: Settings
     cache: Any = None
     reranker: RerankerFn | None = None
+    breakers: Any = None
 
 
 class GraphRunner:
@@ -84,11 +85,17 @@ def build_graph_runner(
     settings: Settings,
     cache: Any = None,
     reranker: RerankerFn | None = None,
+    breakers: Any = None,
 ) -> GraphRunner:
     from langgraph.graph import END, START, StateGraph
 
     deps = GraphDeps(
-        retriever=retriever, llm=llm, settings=settings, cache=cache, reranker=reranker
+        retriever=retriever,
+        llm=llm,
+        settings=settings,
+        cache=cache,
+        reranker=reranker,
+        breakers=breakers,
     )
 
     async def cache_lookup(state: AskState) -> dict[str, Any]:
@@ -127,6 +134,7 @@ def build_graph_runner(
             deps.cache,
             state.get("emb"),
             deps.reranker,
+            deps.breakers,
         )
         return {"chunks": chunks, "degraded": degraded}
 
@@ -141,6 +149,7 @@ def build_graph_runner(
             state.get("emb"),
             deps.reranker,
             state.get("degraded", []),
+            deps.breakers,
         )
         update: dict[str, Any] = {
             "chunks": chunks,
@@ -182,6 +191,7 @@ def build_graph_runner(
             state.get("route", "simple"),
             state.get("degraded", []),
             state["request_id"],
+            deps.breakers,
         )
         maybe_check_faithfulness(result, state.get("chunks", []), deps.llm, deps.settings)
         return {"result": result}

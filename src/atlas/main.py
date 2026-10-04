@@ -3,12 +3,14 @@
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from atlas import __version__
 from atlas.api.routes import router
 from atlas.config import get_settings
+from atlas.resilience.errors import AtlasError, ValidationFailed
 from atlas.services import Services
 
 
@@ -47,6 +49,22 @@ def create_app(services: Services | None = None) -> FastAPI:
         if settings.app_env == "prod":
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
         return response
+
+    @app.exception_handler(AtlasError)
+    async def atlas_problem_handler(request: Request, exc: AtlasError) -> JSONResponse:
+        """RFC 9457 problem+json with stable codes; no internals leak (spec §12)."""
+        headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        return JSONResponse(
+            status_code=exc.status,
+            content=exc.problem(),
+            media_type="application/problem+json",
+            headers=headers,
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        problem = ValidationFailed("invalid request body").problem()
+        return JSONResponse(status_code=422, content=problem, media_type="application/problem+json")
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

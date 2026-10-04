@@ -97,10 +97,9 @@ def test_injection_blocked_at_api(monkeypatch) -> None:
         headers=_auth(),
     )
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["route"] == "unsafe"
-    assert body["abstained"] is True
+    assert response.status_code == 403
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["code"] == "guard_blocked"
 
 
 def test_metrics_requires_bearer(monkeypatch) -> None:

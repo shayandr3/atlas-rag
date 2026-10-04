@@ -17,9 +17,12 @@ from atlas.cache.service import CacheService
 from atlas.config import Settings
 from atlas.llm.adapter import LLMResponse
 from atlas.llm.prompts import ANSWER_SYSTEM, CANARY_TOKEN
+from atlas.observability.metrics import DEGRADED_TOTAL
 from atlas.pipeline.faithfulness import maybe_check_faithfulness
 from atlas.pipeline.grade import grade_chunks, rewrite_query, should_skip_grading
 from atlas.pipeline.router import RouteDecision, route_query
+from atlas.resilience.breaker import Breakers
+from atlas.resilience.errors import UpstreamUnavailable
 from atlas.retrieval.chunks import Chunk
 from atlas.retrieval.embedders import QueryEmbedding
 from atlas.retrieval.rerank import _cap_per_doc
@@ -150,6 +153,36 @@ def _zero_usage() -> Usage:
     return Usage(input_tokens=0, output_tokens=0, cached_tokens=0, cost_usd=0.0)
 
 
+def _extractive_answer(chunks: list[Chunk], route: str, degraded: list[str], rid: str) -> AskResult:
+    """Ladder rung 3: LLM unavailable -> serve top evidence snippets with citations."""
+    DEGRADED_TOTAL.labels(rung="extractive").inc()
+    top = chunks[:3]
+    snippets = "\n\n".join(f"[S{i}] {c.title}: {c.text[:300]}" for i, c in enumerate(top, start=1))
+    answer = (
+        "Answer generation is temporarily unavailable; here are the most relevant "
+        f"passages found for your question:\n\n{snippets}"
+    )
+    cited = [
+        Citation(
+            id=c.chunk_id,
+            title=c.title,
+            section=c.section_path,
+            url=c.source_url,
+            snippet=c.text[:_SNIPPET_CHARS],
+        )
+        for c in top
+    ]
+    return AskResult(
+        answer=answer,
+        citations=cited,
+        route=route,
+        abstained=False,
+        usage=_zero_usage(),
+        request_id=rid,
+        degraded=degraded,
+    )
+
+
 # ---- steps -----------------------------------------------------------------------
 
 
@@ -213,6 +246,7 @@ async def step_retrieve(
     cache: CacheService | None,
     emb: QueryEmbedding | None,
     reranker: RerankerFn | None,
+    breakers: Breakers | None = None,
 ) -> tuple[list[Chunk], list[str]]:
     """L3-cached retrieval + rerank with diversity cap. Returns (chunks, degraded)."""
     limit = _retrieval_limit(settings, reranker)
@@ -220,7 +254,13 @@ async def step_retrieve(
         cached = await cache.get_chunks(query, limit)
         if cached is not None:
             return [Chunk(**c) for c in cached], []
-    chunks = await retriever.search(query, limit=limit, embedding=emb)
+    if breakers is not None:
+        try:
+            chunks = await breakers.qdrant.call(retriever.search, query, limit=limit, embedding=emb)
+        except Exception as exc:
+            raise UpstreamUnavailable("retrieval is unavailable") from exc
+    else:
+        chunks = await retriever.search(query, limit=limit, embedding=emb)
     if not chunks:
         return [], []
     if reranker is None:
@@ -234,6 +274,7 @@ async def step_retrieve(
         except Exception:
             logger.warning("reranker failed; falling back to retrieval order", exc_info=True)
             ranked, degraded = chunks[: settings.retrieval_top_k], ["rerank"]
+            DEGRADED_TOTAL.labels(rung="rerank").inc()
     if cache is not None and not degraded:
         await cache.put_chunks(query, limit, [asdict(c) for c in ranked])
     return ranked, degraded
@@ -249,6 +290,7 @@ async def step_grade_loop(
     emb: QueryEmbedding | None,
     reranker: RerankerFn | None,
     degraded: list[str] | None = None,
+    breakers: Breakers | None = None,
 ) -> tuple[list[Chunk], list[str], bool]:
     """CRAG loop: grade → rewrite+retrieve → grade, bounded by MAX_CORRECTIVE_LOOPS.
 
@@ -263,7 +305,7 @@ async def step_grade_loop(
     while not outcome.enough and loops < settings.max_corrective_loops:
         rewritten = await rewrite_query(query, outcome.feedback, llm, settings)
         chunks, degraded2 = await step_retrieve(
-            rewritten, retriever, settings, cache, emb, reranker
+            rewritten, retriever, settings, cache, emb, reranker, breakers
         )
         flags = list({*flags, *degraded2})
         if not chunks:
@@ -281,15 +323,39 @@ async def step_generate(
     route: str,
     degraded: list[str],
     rid: str,
+    breakers: Breakers | None = None,
 ) -> AskResult:
     context = pack_context(chunks, settings.max_context_tokens)
     user_msg = f"<sources>\n{context}\n</sources>\n\nQuestion: {query}"
-    response = await llm.complete(
-        system=ANSWER_SYSTEM,
-        user=user_msg,
-        model=settings.llm_strong_model,
-        max_tokens=settings.max_output_tokens,
-    )
+
+    async def call(model: str) -> Any:
+        return await llm.complete(
+            system=ANSWER_SYSTEM,
+            user=user_msg,
+            model=model,
+            max_tokens=settings.max_output_tokens,
+        )
+
+    attempts = [settings.llm_strong_model]
+    if settings.llm_fallback_model and settings.llm_fallback_model != settings.llm_strong_model:
+        attempts.append(settings.llm_fallback_model)
+
+    response: Any = None
+    for index, model in enumerate(attempts):
+        try:
+            if index == 0 and breakers is not None:
+                response = await breakers.llm.call(call, model)
+            else:
+                response = await call(model)
+            if index > 0:
+                degraded = [*degraded, "llm_fallback"]
+                DEGRADED_TOTAL.labels(rung="fallback_model").inc()
+            break
+        except Exception:
+            logger.warning("generate failed on model %s", model, exc_info=True)
+    if response is None:
+        return _extractive_answer(chunks, route, [*degraded, "llm_extractive"], rid)
+
     usage = Usage(
         input_tokens=response.input_tokens,
         output_tokens=response.output_tokens,
@@ -370,8 +436,11 @@ async def run_simple(
     emb: QueryEmbedding | None,
     reranker: RerankerFn | None,
     rid: str,
+    breakers: Breakers | None = None,
 ) -> AskResult:
-    chunks, degraded = await step_retrieve(query, retriever, settings, cache, emb, reranker)
+    chunks, degraded = await step_retrieve(
+        query, retriever, settings, cache, emb, reranker, breakers
+    )
     if not chunks:
         return AskResult(
             answer="I couldn't find any relevant evidence in the corpus for this question.",
@@ -383,11 +452,11 @@ async def run_simple(
             degraded=degraded,
         )
     chunks, degraded, enough = await step_grade_loop(
-        query, chunks, llm, settings, retriever, cache, emb, reranker, degraded
+        query, chunks, llm, settings, retriever, cache, emb, reranker, degraded, breakers
     )
     if not enough:
         return await _abstain_with_evidence(query, chunks, "simple", degraded, rid)
-    result = await step_generate(query, chunks, llm, settings, "simple", degraded, rid)
+    result = await step_generate(query, chunks, llm, settings, "simple", degraded, rid, breakers)
     maybe_check_faithfulness(result, chunks, llm, settings)
     return result
 
@@ -401,6 +470,7 @@ async def run_ask(
     cache: CacheService | None = None,
     reranker: RerankerFn | None = None,
     graph: Any = None,
+    breakers: Breakers | None = None,
     request_id: str | None = None,
 ) -> AskResult:
     """Sequential orchestration; delegates to the LangGraph runner when one is wired."""
@@ -451,6 +521,7 @@ async def run_ask(
             emb=emb,
             reranker=reranker,
             rid=rid,
+            breakers=breakers,
         )
 
     await _store_result(cache, query, emb, result)

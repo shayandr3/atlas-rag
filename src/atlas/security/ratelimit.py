@@ -7,6 +7,7 @@ for the single serving worker (Render free runs exactly one worker).
 import time
 from collections import defaultdict, deque
 from typing import Any
+from uuid import uuid4
 
 from atlas.cache.client import FailOpenRedis
 
@@ -32,20 +33,20 @@ class RateLimiter:
     async def _redis_window(self, key: str, limit: int, now: float) -> tuple[bool | None, int]:
         assert self._redis is not None  # guarded by allow()
         zkey = f"ratelimit:{key}"
-        member = f"{now}:{id(now)}"
+        member = f"{now}:{uuid4().hex}"  # id(now) can collide after GC; uuid cannot
         try:
             pipe = self._redis._client.pipeline()
             pipe.zremrangebyscore(zkey, 0, now - self._window)
-            pipe.zcard(zkey)
             pipe.zadd(zkey, {member: now})
+            pipe.zcard(zkey)
             pipe.expire(zkey, self._window * 2)
             results = await pipe.execute()
         except Exception:
             self._redis._fail()
             return None, 0
         self._redis._ok()
-        count = int(results[1])
-        if count >= limit:
+        count = int(results[2])
+        if count > limit:
             return False, self._window
         return True, 0
 

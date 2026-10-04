@@ -22,7 +22,7 @@ Full build spec: [PRODUCTION_RAG_PROJECT_SPEC.md](PRODUCTION_RAG_PROJECT_SPEC.md
 | M2 | Redis caches (L0–L3), single-flight, fail-open                           | ✅     |
 | M3 | Reranker, router, corrective loop, multi-hop, LangGraph + memory go/no-go | ✅    |
 | M4 | Security layer (auth, rate limits, guards, red-team suite, budgets)      | ✅     |
-| M5 | Resilience (breakers, degradation ladder, chaos tests)                   | ⬜     |
+| M5 | Resilience (breakers, degradation ladder, chaos tests)                   | ✅     |
 | M6 | Observability (metrics catalogue, dashboards, alerts, optional LangSmith) | ⬜    |
 | M7 | Dockerize + Render deploy + Grafana Cloud + keep-alive ADR               | ⬜     |
 | M8 | Eval at scale, load test, RESULTS.md, final README                       | ⬜     |

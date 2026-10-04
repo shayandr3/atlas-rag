@@ -101,3 +101,19 @@ class FakeEmbedder:
         self.calls += 1
         dense = self._vectors.get(text, [1.0, 0.0, 0.0, 0.0])
         return QueryEmbedding(dense=dense, sparse_indices=[0], sparse_values=[1.0])
+
+
+class DyingRetriever:
+    """Serves once, then the dependency 'dies' (chaos kill)."""
+
+    def __init__(self, chunks: list[Chunk]) -> None:
+        self.chunks = chunks
+        self.calls = 0
+
+    async def search(
+        self, query: str, *, limit: int, embedding: QueryEmbedding | None = None
+    ) -> list[Chunk]:
+        self.calls += 1
+        if self.calls > 1:
+            raise RuntimeError("qdrant blackholed")
+        return self.chunks[:limit]

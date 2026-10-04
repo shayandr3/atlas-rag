@@ -37,3 +37,15 @@ BUDGET_REMAINING = Gauge(
     "Budget headroom by scope (global_daily/global_monthly)",
     ["scope"],
 )
+
+CIRCUIT_STATE = Gauge(
+    "atlas_circuit_state",
+    "Circuit breaker state: 0 closed, 1 half_open, 2 open",
+    ["dependency"],
+)
+
+DEGRADED_TOTAL = Counter(
+    "atlas_degraded_total",
+    "Degradation-ladder activations by rung",
+    ["rung"],
+)
