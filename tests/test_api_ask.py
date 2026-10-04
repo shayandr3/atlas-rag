@@ -18,7 +18,9 @@ def make_services() -> Services:
     )
 
 
-def test_ask_endpoint_returns_answer_citations_usage() -> None:
+def test_ask_endpoint_returns_answer_citations_usage(monkeypatch) -> None:
+    monkeypatch.setenv("API_KEYS_JSON", "")  # dev open mode: no keys configured
+    get_settings.cache_clear()
     client = TestClient(create_app(services=make_services()))
 
     response = client.post("/v1/ask", json={"query": "what is retrieval?"})
@@ -34,7 +36,9 @@ def test_ask_endpoint_returns_answer_citations_usage() -> None:
     assert body["request_id"]
 
 
-def test_ask_endpoint_rejects_empty_query() -> None:
+def test_ask_endpoint_rejects_empty_query(monkeypatch) -> None:
+    monkeypatch.setenv("API_KEYS_JSON", "")
+    get_settings.cache_clear()
     client = TestClient(create_app(services=make_services()))
 
     response = client.post("/v1/ask", json={"query": ""})

@@ -1,6 +1,6 @@
 """Lazy service container so /healthz stays cheap and tests can inject fakes."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from atlas.cache.client import FailOpenRedis
@@ -12,6 +12,7 @@ from atlas.retrieval.embedders import FastembedEmbedder
 from atlas.retrieval.hybrid import HybridRetriever
 from atlas.retrieval.qdrant_repo import QdrantRepo
 from atlas.retrieval.rerank import FastembedReranker
+from atlas.security.ratelimit import RateLimiter
 
 
 @dataclass
@@ -25,6 +26,7 @@ class Services:
     cache: CacheService | None = None
     reranker: Any = None
     graph: Any = None
+    rate_limiter: RateLimiter = field(default_factory=RateLimiter)
 
     @classmethod
     def build(cls, settings: Settings) -> "Services":
@@ -77,4 +79,5 @@ class Services:
             cache=cache,
             reranker=reranker,
             graph=graph,
+            rate_limiter=RateLimiter(cache._redis if cache else None),
         )

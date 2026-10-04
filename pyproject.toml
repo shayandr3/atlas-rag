@@ -64,6 +64,10 @@ select = ["E", "W", "F", "I", "B", "C4", "SIM", "UP", "RUF", "ASYNC"]
 # the context-prefix format uses the spec's › separator (title › section_path)
 allowed-confusables = ["›"]
 
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's Depends-in-default is the framework's canonical DI pattern
+"src/atlas/api/routes.py" = ["B008"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["atlas"]
 

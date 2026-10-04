@@ -31,3 +31,4 @@ models_cache/
 .vscode/
 .DS_Store
 Thumbs.db
+demo_api_key.txt

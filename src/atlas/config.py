@@ -54,6 +54,17 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 60.0
     qdrant_timeout_seconds: float = 10.0
 
+    # Security (M4, spec §11)
+    api_key_pepper: str = ""
+    api_keys_json: str = ""
+    metrics_bearer_token: str = ""
+    admin_token: str = ""
+    cors_origins: str = "http://localhost:10000"
+    global_monthly_budget_usd: float = 10.0
+    global_daily_budget_usd: float = 1.0
+    default_key_daily_budget_usd: float = 0.25
+    max_body_bytes: int = 65_536
+
     # Cache / Redis (M2, spec §9)
     redis_url: str = "redis://localhost:6379/0"
     semantic_cache_enabled: bool = True

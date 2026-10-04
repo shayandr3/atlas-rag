@@ -21,7 +21,7 @@ Full build spec: [PRODUCTION_RAG_PROJECT_SPEC.md](PRODUCTION_RAG_PROJECT_SPEC.md
 | M1 | Ingestion + Qdrant hybrid retrieval + LLM adapter + basic `/v1/ask`      | ⬜     |
 | M2 | Redis caches (L0–L3), single-flight, fail-open                           | ✅     |
 | M3 | Reranker, router, corrective loop, multi-hop, LangGraph + memory go/no-go | ✅    |
-| M4 | Security layer (auth, rate limits, guards, red-team suite, budgets)      | ⬜     |
+| M4 | Security layer (auth, rate limits, guards, red-team suite, budgets)      | ✅     |
 | M5 | Resilience (breakers, degradation ladder, chaos tests)                   | ⬜     |
 | M6 | Observability (metrics catalogue, dashboards, alerts, optional LangSmith) | ⬜    |
 | M7 | Dockerize + Render deploy + Grafana Cloud + keep-alive ADR               | ⬜     |
@@ -39,6 +39,13 @@ docker compose up -d                                    # local Qdrant + Redis
 
 CI runs ruff, mypy (strict), pytest, gitleaks and pip-audit on every push/PR
 (`.github/workflows/ci.yml`).
+
+## Security
+
+Auth (peppered key hashes), rate limits, layered prompt-injection guards, canary leak
+detection, PII redaction, USD budgets — mapped to the OWASP LLM Top 10 in
+[docs/security.md](docs/security.md), with a 43-prompt red-team suite:
+**93% block rate, 0% false positives** (measured 2026-10-04).
 
 ## Docs
 
