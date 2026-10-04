@@ -40,6 +40,8 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: pytest -q
+      - name: architecture diagram must not be stale
+        run: python scripts/export_graph.py --check
 
   secrets:
     runs-on: ubuntu-latest
