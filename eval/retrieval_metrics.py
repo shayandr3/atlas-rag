@@ -31,17 +31,19 @@ def metrics_for(
 ) -> dict[str, float]:
     gold_chunks: list[str] = item.get("gold_chunk_ids") or []
     gold_docs: list[str] = item.get("gold_doc_ids") or []
+    # doc-level ranking: several chunks of one doc must not each add gain
+    doc_rank = list(dict.fromkeys(doc_ids))
     out: dict[str, float] = {}
     for name, gold, got in (
         ("recall_chunk", gold_chunks, chunk_ids),
         ("recall_doc", gold_docs, doc_ids),
     ):
         out[name] = (len(set(gold) & set(got)) / len(gold)) if gold else 0.0
-    for name, gold, got in (("mrr", gold_chunks, chunk_ids), ("mrr_doc", gold_docs, doc_ids)):
+    for name, gold, got in (("mrr", gold_chunks, chunk_ids), ("mrr_doc", gold_docs, doc_rank)):
         out[name] = next((1.0 / (rank + 1) for rank, g in enumerate(got[:k]) if g in gold), 0.0)
     for name, gold, got in (
         ("ndcg_chunk", gold_chunks, chunk_ids),
-        ("ndcg_doc", gold_docs, doc_ids),
+        ("ndcg_doc", gold_docs, doc_rank),
     ):
         dcg = sum(1.0 / math.log2(rank + 2) for rank, g in enumerate(got[:k]) if g in gold)
         ideal = sum(1.0 / math.log2(rank + 2) for rank in range(min(len(gold), k)))

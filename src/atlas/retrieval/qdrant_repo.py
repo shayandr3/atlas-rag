@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
+
 if TYPE_CHECKING:
     from qdrant_client import models
 
@@ -57,6 +59,12 @@ class QdrantRepo:
             )
         logger.info("created qdrant collection %s (dense_dim=%d)", self.collection, dense_dim)
 
+    @retry(
+        retry=retry_if_exception_type((Exception,)),
+        wait=wait_fixed(3),
+        stop=stop_after_attempt(3),
+        reraise=True,
+    )
     async def search(
         self,
         *,
