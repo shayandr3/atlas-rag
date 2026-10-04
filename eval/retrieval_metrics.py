@@ -81,8 +81,15 @@ def main() -> None:
     parser.add_argument("--golden", default="eval/golden/golden.jsonl")
     parser.add_argument("--modes", default="hybrid,dense,sparse")
     parser.add_argument("--k", type=int, default=5)
+    parser.add_argument(
+        "--types",
+        default="single_hop,multi_hop,comparative",
+        help="types to score (unanswerable/paraphrase are answer-level and cache-tuning items)",
+    )
     args = parser.parse_args()
     golden = load_golden(args.golden)
+    wanted = {t.strip() for t in args.types.split(",")}
+    golden = [g for g in golden if not wanted or g.get("type", "single_hop") in wanted]
     if not golden:
         print("golden set is empty — generate and review it first (spec §15.1)")
         return
