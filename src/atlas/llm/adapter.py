@@ -4,6 +4,7 @@ Features: per-call timeout, bounded retries on transient errors, token/cost acco
 Streaming, prompt-caching hooks and the structured-JSON helper arrive with later milestones.
 """
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -138,6 +139,7 @@ class OpenAICompatLLM:
         timeout_seconds: float = 60.0,
         base_url: str = "",
         http_client: Any | None = None,
+        extra_body: dict[str, Any] | None = None,
     ) -> None:
         # Lazy import keeps the openai SDK off the boot path unless this provider is used.
         from openai import AsyncOpenAI
@@ -149,23 +151,28 @@ class OpenAICompatLLM:
             http_client=http_client,
         )
         self._pricing = pricing
+        self._extra_body = extra_body
 
     @retry(
         retry=retry_if_exception(_is_retryable_openai),
-        wait=wait_exponential_jitter(initial=0.5, max=8.0),
-        stop=stop_after_attempt(3),
+        # free tiers 429 aggressively; back off patiently (ADR 0003)
+        wait=wait_exponential_jitter(initial=1.0, max=30.0),
+        stop=stop_after_attempt(4),
         reraise=True,
     )
     async def complete(self, *, system: str, user: str, model: str, max_tokens: int) -> LLMResponse:
-        resp = await self._client.chat.completions.create(
-            model=model,
-            max_tokens=max_tokens,
-            temperature=0.0,
-            messages=[
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+            "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-        )
+        }
+        if self._extra_body:
+            kwargs["extra_body"] = self._extra_body
+        resp = await self._client.chat.completions.create(**kwargs)
         usage = resp.usage
         input_tokens = int(usage.prompt_tokens) if usage else 0
         output_tokens = int(usage.completion_tokens) if usage else 0
@@ -210,9 +217,13 @@ def build_llm(settings: Settings, pricing: PricingTable) -> LLM:
         raise RuntimeError(
             "OPENAI_API_KEY is not set; LLM_PROVIDER=openai requires it (e.g. DeepSeek)"
         )
+    extra_body: dict[str, Any] | None = None
+    if settings.llm_extra_body_json:
+        extra_body = json.loads(settings.llm_extra_body_json)
     return OpenAICompatLLM(
         api_key=settings.openai_api_key,
         pricing=pricing,
         timeout_seconds=settings.llm_timeout_seconds,
         base_url=settings.openai_base_url,
+        extra_body=extra_body,
     )

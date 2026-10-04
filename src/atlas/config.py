@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     openai_base_url: str = ""
+    # Extra JSON body merged into every OpenAI-compatible request,
+    # e.g. {"thinking": {"type": "disabled"}} for Z.AI GLM models.
+    llm_extra_body_json: str = ""
     llm_cheap_model: str = ""
     llm_strong_model: str = ""
     llm_fallback_model: str = ""
