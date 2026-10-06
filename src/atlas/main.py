@@ -1,5 +1,6 @@
 """FastAPI app factory."""
 
+import sys
 import time
 from collections.abc import Awaitable, Callable
 
@@ -21,13 +22,7 @@ from atlas.observability.metrics import (
 from atlas.resilience.errors import AtlasError, ValidationFailed
 from atlas.services import Services
 
-try:  # stdlib-only RSS reading; psutil stays out of the serving image
-    import resource
-
-    def _rss_bytes() -> int:
-        return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024  # type: ignore[attr-defined]
-
-except ImportError:  # Windows dev
+if sys.platform == "win32":  # stdlib-only RSS reading; psutil stays out of the image
 
     def _rss_bytes() -> int:
         import ctypes
@@ -59,6 +54,13 @@ except ImportError:  # Windows dev
         if not k32.K32GetProcessMemoryInfo(k32.GetCurrentProcess(), ctypes.byref(pmc), pmc.cb):
             return 0
         return int(pmc.WorkingSetSize)
+
+else:
+
+    def _rss_bytes() -> int:
+        import resource
+
+        return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
 
 
 def create_app(services: Services | None = None) -> FastAPI:
