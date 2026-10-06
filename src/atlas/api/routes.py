@@ -2,9 +2,11 @@
 
 import logging
 import time
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from prometheus_client import REGISTRY, generate_latest
 from pydantic import BaseModel, Field
@@ -98,6 +100,15 @@ def _to_response(result: AskResult) -> AskResponse:
         request_id=result.request_id,
         cache=result.cache_status,
     )
+
+
+_WEB_DIR = Path(__file__).resolve().parents[1] / "web"
+
+
+@router.get("/")
+async def demo_ui() -> FileResponse:
+    """Demo UI (spec §14): static page, no build step."""
+    return FileResponse(_WEB_DIR / "index.html")
 
 
 @router.post("/v1/ask", response_model=AskResponse)

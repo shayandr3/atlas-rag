@@ -1,0 +1,56 @@
+# Render Blueprint (spec §16.2). Field names follow Render's current blueprint spec —
+# re-verify against https://render.com/docs/blueprint-spec before the first deploy.
+services:
+  - type: web
+    name: atlas-rag
+    runtime: docker
+    plan: free
+    region: frankfurt # match the Qdrant region; change if you are elsewhere
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: RERANK_BACKEND
+        value: none # ADR 0004: 512 MB envelope excludes the local reranker
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: atlas-cache
+          property: connectionString
+      - key: CORS_ORIGINS
+        value: https://atlas-rag.onrender.com
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        value: https://api.z.ai/api/paas/v4
+      - key: LLM_CHEAP_MODEL
+        value: glm-4.7-flash
+      - key: LLM_STRONG_MODEL
+        value: glm-4.7-flash
+      - key: LLM_FALLBACK_MODEL
+        sync: false
+      - key: LLM_EXTRA_BODY_JSON
+        value: '{"thinking":{"type":"disabled"}}'
+      - key: API_KEY_PEPPER
+        sync: false
+      - key: API_KEYS_JSON
+        sync: false
+      - key: METRICS_BEARER_TOKEN
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: FAITHFULNESS_SAMPLE_RATE
+        value: "0.2"
+
+  - type: keyvalue
+    name: atlas-cache
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: [] # internal connections from atlas-rag in the same region

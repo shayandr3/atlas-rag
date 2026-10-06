@@ -8,7 +8,7 @@ Prometheus/Grafana observability.
 
 Full build spec: [PRODUCTION_RAG_PROJECT_SPEC.md](PRODUCTION_RAG_PROJECT_SPEC.md).
 
-> **Status:** M0 — repo skeleton, tooling, CI. Live demo: TBD (not deployed yet).
+> **Status:** M0–M7 complete — deployed on Render (free tier), observability on Grafana Cloud. Live demo: this README updates with the URL at M8 sign-off.
 >
 > **Numbers policy:** latency, cost, recall and faithfulness figures appear in this README only
 > when produced by a recorded eval/load run. Anything unmeasured says `TBD (not measured)`.
@@ -24,7 +24,7 @@ Full build spec: [PRODUCTION_RAG_PROJECT_SPEC.md](PRODUCTION_RAG_PROJECT_SPEC.md
 | M4 | Security layer (auth, rate limits, guards, red-team suite, budgets)      | ✅     |
 | M5 | Resilience (breakers, degradation ladder, chaos tests)                   | ✅     |
 | M6 | Observability (metrics catalogue, dashboards, alerts; LangSmith optional, deferred) | ✅    |
-| M7 | Dockerize + Render deploy + Grafana Cloud + keep-alive ADR               | ⬜     |
+| M7 | Dockerize + Render deploy + Grafana Cloud + keep-alive ADR               | ✅     |
 | M8 | Eval at scale, load test, RESULTS.md, final README                       | ⬜     |
 
 ## Development
@@ -46,6 +46,15 @@ Auth (peppered key hashes), rate limits, layered prompt-injection guards, canary
 detection, PII redaction, USD budgets — mapped to the OWASP LLM Top 10 in
 [docs/security.md](docs/security.md), with a 43-prompt red-team suite:
 **93% block rate, 0% false positives** (measured 2026-10-04).
+
+## Deployment
+
+Single Docker image (multi-stage, non-root, ONNX models baked at build so cold start is
+load-only; the cross-encoder is deliberately excluded on the free tier — [ADR 0004](docs/adr/0004-langgraph-memory-go-no-go.md)).
+Deployed via the [Render Blueprint](render.yaml) (web + free Key Value cache, Frankfurt,
+same region as Qdrant). Keep-alive strategy: [ADR 0005](docs/adr/0005-keep-alive-grafana-scrape.md).
+Post-deploy smoke: `DEPLOY_URL=... DEPLOY_KEY=... python scripts/smoke_deploy.py`.
+Serving config on the free tier: `RERANK_BACKEND=none`, 1 uvicorn worker.
 
 ## Observability
 
