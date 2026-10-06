@@ -13,6 +13,7 @@ import random
 from typing import TYPE_CHECKING, Any
 
 from atlas.config import Settings
+from atlas.observability.metrics import FAITHFULNESS
 
 if TYPE_CHECKING:
     from atlas.pipeline.ask import AskResult
@@ -52,6 +53,7 @@ async def judge_faithfulness(
             max_tokens=250,
         )
         score = max(0.0, min(1.0, float(raw.get("score", -1.0))))
+        FAITHFULNESS.observe(score)
         logger.info("faithfulness score=%.2f route=%s", score, result.route)
         return score
     except (StructuredOutputError, AttributeError, TypeError, ValueError):

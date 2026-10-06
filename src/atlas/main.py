@@ -1,5 +1,6 @@
 """FastAPI app factory."""
 
+import time
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request
@@ -10,8 +11,54 @@ from fastapi.responses import JSONResponse
 from atlas import __version__
 from atlas.api.routes import router
 from atlas.config import get_settings
+from atlas.observability.metrics import (
+    BUILD_INFO,
+    HTTP_DURATION,
+    HTTP_REQUESTS,
+    INFLIGHT,
+    PROCESS_RSS,
+)
 from atlas.resilience.errors import AtlasError, ValidationFailed
 from atlas.services import Services
+
+try:  # stdlib-only RSS reading; psutil stays out of the serving image
+    import resource
+
+    def _rss_bytes() -> int:
+        return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024  # type: ignore[attr-defined]
+
+except ImportError:  # Windows dev
+
+    def _rss_bytes() -> int:
+        import ctypes
+        import ctypes.wintypes as wintypes
+
+        class PMC(ctypes.Structure):
+            _fields_ = [
+                ("cb", wintypes.DWORD),
+                ("PageFaultCount", wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        k32 = ctypes.windll.kernel32
+        k32.K32GetProcessMemoryInfo.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(PMC),
+            wintypes.DWORD,
+        ]
+        k32.K32GetProcessMemoryInfo.restype = wintypes.BOOL
+        pmc = PMC()
+        pmc.cb = ctypes.sizeof(pmc)
+        if not k32.K32GetProcessMemoryInfo(k32.GetCurrentProcess(), ctypes.byref(pmc), pmc.cb):
+            return 0
+        return int(pmc.WorkingSetSize)
 
 
 def create_app(services: Services | None = None) -> FastAPI:
@@ -26,6 +73,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     )
     app.state.services = services
     app.include_router(router)
+    BUILD_INFO.labels(version=__version__, corpus_version=settings.corpus_version).set(1)
 
     app.add_middleware(
         CORSMiddleware,
@@ -33,22 +81,6 @@ def create_app(services: Services | None = None) -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Authorization", "Content-Type"],
     )
-
-    @app.middleware("http")
-    async def security_envelope(
-        request: Request, call_next: Callable[[Request], Awaitable[JSONResponse]]
-    ) -> JSONResponse:
-        # request hygiene (spec §11.1): body-size ceiling + security headers
-        content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > settings.max_body_bytes:
-            return JSONResponse({"detail": "request too large"}, status_code=413)
-        response: JSONResponse = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
-        if settings.app_env == "prod":
-            response.headers["Strict-Transport-Security"] = "max-age=31536000"
-        return response
 
     @app.exception_handler(AtlasError)
     async def atlas_problem_handler(request: Request, exc: AtlasError) -> JSONResponse:
@@ -65,6 +97,35 @@ def create_app(services: Services | None = None) -> FastAPI:
     async def validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
         problem = ValidationFailed("invalid request body").problem()
         return JSONResponse(status_code=422, content=problem, media_type="application/problem+json")
+
+    @app.middleware("http")
+    async def observability_envelope(
+        request: Request, call_next: Callable[[Request], Awaitable[JSONResponse]]
+    ) -> JSONResponse:
+        # request hygiene (spec §11.1) + full HTTP instrumentation (spec §13.2)
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > settings.max_body_bytes:
+            HTTP_REQUESTS.labels(route=request.url.path, method=request.method, status="413").inc()
+            return JSONResponse({"detail": "request too large"}, status_code=413)
+        route = request.url.path
+        INFLIGHT.inc()
+        started = time.perf_counter()
+        try:
+            response: JSONResponse = await call_next(request)
+        finally:
+            INFLIGHT.dec()
+        elapsed = time.perf_counter() - started
+        HTTP_REQUESTS.labels(
+            route=route, method=request.method, status=str(response.status_code)
+        ).inc()
+        HTTP_DURATION.labels(route=route).observe(elapsed)
+        PROCESS_RSS.set(_rss_bytes())
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
+        if settings.app_env == "prod":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
+        return response
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

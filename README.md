@@ -23,7 +23,7 @@ Full build spec: [PRODUCTION_RAG_PROJECT_SPEC.md](PRODUCTION_RAG_PROJECT_SPEC.md
 | M3 | Reranker, router, corrective loop, multi-hop, LangGraph + memory go/no-go | ✅    |
 | M4 | Security layer (auth, rate limits, guards, red-team suite, budgets)      | ✅     |
 | M5 | Resilience (breakers, degradation ladder, chaos tests)                   | ✅     |
-| M6 | Observability (metrics catalogue, dashboards, alerts, optional LangSmith) | ⬜    |
+| M6 | Observability (metrics catalogue, dashboards, alerts; LangSmith optional, deferred) | ✅    |
 | M7 | Dockerize + Render deploy + Grafana Cloud + keep-alive ADR               | ⬜     |
 | M8 | Eval at scale, load test, RESULTS.md, final README                       | ⬜     |
 
@@ -46,6 +46,20 @@ Auth (peppered key hashes), rate limits, layered prompt-injection guards, canary
 detection, PII redaction, USD budgets — mapped to the OWASP LLM Top 10 in
 [docs/security.md](docs/security.md), with a 43-prompt red-team suite:
 **93% block rate, 0% false positives** (measured 2026-10-04).
+
+## Observability
+
+Full Prometheus catalogue (26 metric families, low-cardinality labels, series-budget
+test) with a pre-provisioned local stack:
+
+```bash
+docker compose -f docker-compose.monitoring.yml up -d   # Prometheus :9090, Grafana :3000
+uvicorn atlas.main:app --port 10000
+```
+
+Grafana loads the `atlas-rag` dashboard automatically (traffic, stage latency, cost per
+query, cache hit ratio, abstentions/faithfulness, guard blocks, circuit states, RSS vs
+the 512 MB cap). Alerts + runbook: `ops/prometheus/alerts.yml`, `docs/runbook.md`.
 
 ## Docs
 

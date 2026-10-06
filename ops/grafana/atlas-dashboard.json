@@ -1,0 +1,181 @@
+{
+  "title": "atlas-rag",
+  "uid": "atlas-rag",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-3h", "to": "now" },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Traffic & errors",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests / min by status",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 1 },
+      "id": 2,
+      "targets": [
+        { "expr": "sum by (status) (rate(atlas_http_requests_total[5m])) * 60", "legendFormat": "{{status}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Pipeline outcomes",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 1 },
+      "id": 3,
+      "targets": [
+        { "expr": "sum by (outcome, pipeline_route) (rate(atlas_pipeline_requests_total[5m])) * 60", "legendFormat": "{{pipeline_route}}/{{outcome}}" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Latency",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
+      "id": 4
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP p50 / p95 / p99",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 9 },
+      "id": 5,
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(atlas_http_request_duration_seconds_bucket[10m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(atlas_http_request_duration_seconds_bucket[10m])) by (le))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(atlas_http_request_duration_seconds_bucket[10m])) by (le))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Stage latency p95",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 9 },
+      "id": 6,
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(atlas_stage_duration_seconds_bucket[10m])))", "legendFormat": "{{stage}}" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Cost",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "id": 7
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM tokens by kind",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 17 },
+      "id": 8,
+      "targets": [
+        { "expr": "sum by (kind) (rate(atlas_llm_tokens_total[10m]))", "legendFormat": "{{kind}}" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Cost / query (USD, 1h avg)",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 17 },
+      "id": 9,
+      "targets": [
+        { "expr": "sum(rate(atlas_llm_cost_usd_total[1h])) / clamp_min(sum(rate(atlas_pipeline_requests_total{outcome=\"answered\"}[1h])), 0.001)" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Budget remaining today (USD)",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 17 },
+      "id": 10,
+      "targets": [
+        { "expr": "atlas_budget_remaining_usd{scope=\"global_daily\"}" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Cache & quality",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "id": 11
+    },
+    {
+      "type": "gauge",
+      "title": "Cache hit ratio (10m)",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 25 },
+      "id": 12,
+      "targets": [
+        { "expr": "sum(rate(atlas_cache_requests_total{result=\"hit\"}[10m])) / clamp_min(sum(rate(atlas_cache_requests_total[10m])), 0.001)" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Abstentions vs answers",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 25 },
+      "id": 13,
+      "targets": [
+        { "expr": "sum(rate(atlas_abstentions_total[10m]))", "legendFormat": "abstentions" },
+        { "expr": "sum(rate(atlas_pipeline_requests_total{outcome=\"answered\"}[10m]))", "legendFormat": "answered" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Faithfulness (sampled)",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 25 },
+      "id": 14,
+      "targets": [
+        { "expr": "histogram_quantile(0.5, sum by (le) (rate(atlas_faithfulness_score_bucket[1h])))", "legendFormat": "p50" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Security & resilience",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "id": 15
+    },
+    {
+      "type": "timeseries",
+      "title": "Guard blocks & rate limits",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 33 },
+      "id": 16,
+      "targets": [
+        { "expr": "sum by (rule) (rate(atlas_guard_blocks_total[10m]))", "legendFormat": "guard:{{rule}}" },
+        { "expr": "sum by (scope) (rate(atlas_rate_limited_total[10m]))", "legendFormat": "limit:{{scope}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Circuit states & degradations",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 33 },
+      "id": 17,
+      "targets": [
+        { "expr": "atlas_circuit_state", "legendFormat": "{{dependency}}" },
+        { "expr": "sum by (rung) (rate(atlas_degraded_total[10m]))", "legendFormat": "rung:{{rung}}" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Resources",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 40 },
+      "id": 18
+    },
+    {
+      "type": "timeseries",
+      "title": "RSS vs 512 MB cap",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 41 },
+      "id": 19,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 450000000 },
+              { "color": "red", "value": 512000000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "expr": "atlas_process_rss_bytes", "legendFormat": "RSS" }
+      ]
+    }
+  ]
+}

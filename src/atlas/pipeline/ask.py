@@ -8,6 +8,7 @@ decomposition, and sampled faithfulness.
 
 import logging
 import re
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -17,7 +18,13 @@ from atlas.cache.service import CacheService
 from atlas.config import Settings
 from atlas.llm.adapter import LLMResponse
 from atlas.llm.prompts import ANSWER_SYSTEM, CANARY_TOKEN
-from atlas.observability.metrics import DEGRADED_TOTAL
+from atlas.observability.metrics import (
+    ABSTENTIONS,
+    DEGRADED_TOTAL,
+    PIPELINE_REQUESTS,
+    RETRIEVAL_TOP_SCORE,
+    STAGE_DURATION,
+)
 from atlas.pipeline.faithfulness import maybe_check_faithfulness
 from atlas.pipeline.grade import grade_chunks, rewrite_query, should_skip_grading
 from atlas.pipeline.router import RouteDecision, route_query
@@ -438,10 +445,16 @@ async def run_simple(
     rid: str,
     breakers: Breakers | None = None,
 ) -> AskResult:
+    started = time.perf_counter()
     chunks, degraded = await step_retrieve(
         query, retriever, settings, cache, emb, reranker, breakers
     )
+    STAGE_DURATION.labels(stage="retrieve").observe(time.perf_counter() - started)
+    if chunks:
+        RETRIEVAL_TOP_SCORE.labels(stage="rrf").observe(chunks[0].score)
     if not chunks:
+        ABSTENTIONS.labels(reason="no_results").inc()
+        PIPELINE_REQUESTS.labels(pipeline_route="simple", outcome="abstained").inc()
         return AskResult(
             answer="I couldn't find any relevant evidence in the corpus for this question.",
             citations=[],

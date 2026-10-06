@@ -1,0 +1,52 @@
+# Alert rules (also portable to Grafana alerting). Routing (Slack/email) happens in
+# the Alertmanager/Grafana notification channel — documented in docs/runbook.md.
+groups:
+  - name: atlas-rag
+    rules:
+      - alert: AtlasHighErrorRate
+        expr: sum(rate(atlas_http_requests_total{status=~"5.."}[5m])) / sum(rate(atlas_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "5xx rate above 5% for 5 minutes"
+
+      - alert: AtlasHighLatency
+        expr: histogram_quantile(0.95, sum(rate(atlas_http_request_duration_seconds_bucket[10m])) by (le)) > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 HTTP latency above 30s (free-tier cold start?)"
+
+      - alert: AtlasBudgetLow
+        expr: atlas_budget_remaining_usd{scope="global_daily"} < 0.2 * on() group_left() 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Daily budget below 20%"
+
+      - alert: AtlasCircuitOpen
+        expr: max_over_time(atlas_circuit_state[5m]) == 2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A circuit breaker has been open for 5 minutes"
+
+      - alert: AtlasMemoryHigh
+        expr: atlas_process_rss_bytes > 450 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RSS above 450 MB — approaching the 512 MB cap"
+
+      - alert: AtlasAbstentionSpike
+        expr: rate(atlas_abstentions_total[15m]) / clamp_min(rate(atlas_pipeline_requests_total[15m]), 0.001) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Abstention rate above 50% — retrieval or grading degraded?"

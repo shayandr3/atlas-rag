@@ -11,6 +11,7 @@ from typing import Any
 
 from atlas.config import Settings
 from atlas.llm.structured import StructuredOutputError, complete_json
+from atlas.observability.metrics import HOPS, PIPELINE_REQUESTS
 from atlas.pipeline.ask import AskResult, Usage, build_citations, pack_context
 from atlas.pipeline.faithfulness import maybe_check_faithfulness
 from atlas.pipeline.grade import grade_chunks, rewrite_query
@@ -114,7 +115,9 @@ async def run_multi_hop(
         answers[sq.id] = sub_answer.text
         subanswers.append(f"{sq.id}: {sub_answer.text}")
 
+    HOPS.observe(len(sub_questions))
     if not evidence:
+        PIPELINE_REQUESTS.labels(pipeline_route="multi_hop", outcome="abstained").inc()
         return AskResult(
             answer="I couldn't find any relevant evidence in the corpus for this question.",
             citations=[],
@@ -151,5 +154,7 @@ async def run_multi_hop(
         request_id=request_id,
         degraded=degraded,
     )
+    pipeline_outcome = "degraded" if result.degraded else "answered"
+    PIPELINE_REQUESTS.labels(pipeline_route="multi_hop", outcome=pipeline_outcome).inc()
     maybe_check_faithfulness(result, evidence[: settings.retrieval_top_k], llm, settings)
     return result

@@ -27,6 +27,7 @@ from tenacity import (
 
 from atlas.config import Settings
 from atlas.llm.pricing import PricingTable
+from atlas.observability.metrics import LLM_TOKENS
 
 logger = logging.getLogger("atlas.llm")
 
@@ -88,6 +89,10 @@ class AnthropicLLM:
             output_tokens=usage.output_tokens,
             cached_tokens=cached_tokens,
         )
+        LLM_TOKENS.labels(model=model, node="answer", kind="input").inc(usage.input_tokens)
+        LLM_TOKENS.labels(model=model, node="answer", kind="output").inc(usage.output_tokens)
+        if cached_tokens:
+            LLM_TOKENS.labels(model=model, node="answer", kind="cached").inc(cached_tokens)
         logger.info(
             "llm_complete model=%s in=%d out=%d cached=%d cost_usd=%.6f",
             model,

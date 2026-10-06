@@ -1,0 +1,19 @@
+# Local Prometheus scrape config. Grafana Cloud uses the same target over the public
+# URL with a bearer token (spec §13.4) — verify current Grafana Cloud docs first.
+global:
+  scrape_interval: 1m
+  evaluation_interval: 1m
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: atlas-rag
+    metrics_path: /metrics
+    # local dev: app runs without metrics token
+    static_configs:
+      - targets:
+          - "host.docker.internal:10000"
+
+# For Grafana Cloud Metrics Endpoint integration:
+#   URL: https://<service>.onrender.com/metrics  auth: Bearer <METRICS_BEARER_TOKEN>
