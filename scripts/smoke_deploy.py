@@ -58,7 +58,8 @@ def main() -> None:
         check(
             "authenticated ask",
             res.status_code == 200 and bool(body.get("citations")) and not body.get("abstained"),
-            f"{res.status_code}; usage={body.get('usage')}; citations={len(body.get('citations', []))}",
+            f"{res.status_code}; usage={body.get('usage')};"
+            f" citations={len(body.get('citations', []))}",
         )
 
         injection = client.post(
