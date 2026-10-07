@@ -1,3 +1,12 @@
+---
+title: Atlas RAG
+emoji: "🗺️"
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 10000
+pinned: false
+---
 # atlas-rag
 
 A production-grade, observable, cost-aware, secured RAG API + demo UI, engineered to run inside
@@ -51,10 +60,16 @@ detection, PII redaction, USD budgets — mapped to the OWASP LLM Top 10 in
 
 Single Docker image (multi-stage, non-root, ONNX models baked at build so cold start is
 load-only; the cross-encoder is deliberately excluded on the free tier — [ADR 0004](docs/adr/0004-langgraph-memory-go-no-go.md)).
-Deployed via the [Render Blueprint](render.yaml) (web + free Key Value cache, Frankfurt,
-same region as Qdrant). Keep-alive strategy: [ADR 0005](docs/adr/0005-keep-alive-grafana-scrape.md).
+
+**Live platform: Hugging Face Spaces (Docker)** — Render's free tier demanded card
+verification the operator could not provide, so the image deploys as a HF Space instead
+(same Dockerfile, no card required, more RAM than Render free) — [ADR 0006](docs/adr/0006-hosting-hf-spaces.md).
+No managed Redis on the platform: caches fail open and the rate limiter uses its in-process
+fallback (single worker, sound by design). Keep-alive strategy:
+[ADR 0005](docs/adr/0005-keep-alive-grafana-scrape.md) (Grafana Cloud scrape).
 Post-deploy smoke: `DEPLOY_URL=... DEPLOY_KEY=... python scripts/smoke_deploy.py`.
-Serving config on the free tier: `RERANK_BACKEND=none`, 1 uvicorn worker.
+Serving config: `RERANK_BACKEND=none`, 1 uvicorn worker, port 10000 (`app_port`).
+The spec-conformant [Render Blueprint](render.yaml) is kept for reference.
 
 ## Observability
 
